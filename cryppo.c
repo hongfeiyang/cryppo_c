@@ -1,130 +1,121 @@
 #include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <openssl/ssl.h>
-#include <openssl/bio.h>
-#include <openssl/err.h>
+#include <stdbool.h>
 #include <openssl/rsa.h>
-#include <openssl/evp.h>
 #include <openssl/pem.h>
-#include <openssl/rand.h>
-//https://stackoverflow.com/questions/50363097/c-openssl-generate-rsa-keypair-and-read
-const char *pcszPassphrase = "open sezamee";
+#include <openssl/err.h>
 
-static void gen_callback(int iWhat, int inPrime, void *pParam);
-static void init_openssl(void);
-static void cleanup_openssl(void);
-static int passwd_callback(char *pcszBuff, int size, int rwflag, void *pPass);
-static EVP_PKEY *create_rsa_key(RSA *rsa);
-static void handle_openssl_error(void);
-
-int main(int argc, char **argv)
+bool generate_rsa_keypair(int bits)
 {
-    size_t pri_len; // Length of private key
-    size_t pub_len; // Length of public key
-    char *pri_key;  // Private key in PEM
-    char *pub_key;  // Public key in PEM
+    size_t pri_len, pub_len;              // Length of private/public key
+    char *pri_key = NULL, *pub_key = NULL; // Private/Public key string in PEM
 
     int ret = 0;
-    RSA *r = NULL;
-    BIGNUM *bne = NULL;
-    BIO *bp_public = NULL, *bp_private = NULL;
-    int bits = 2048;
-    unsigned long e = RSA_F4;
-
-    RSA *pb_rsa = NULL;
-    RSA *p_rsa = NULL;
-    EVP_PKEY *evp_pbkey = NULL;
-    EVP_PKEY *evp_pkey = NULL;
-
-    BIO *pbkeybio = NULL;
-    BIO *pkeybio = NULL;
+    RSA *rsa = NULL;
+    BIGNUM *bn = NULL;
+    BIO *bio_public_out = NULL, *bio_private_out = NULL, *bio_public_in = NULL, *bio_private_in = NULL;
+    RSA *pb_rsa = NULL, *p_rsa = NULL;
+    EVP_PKEY *evp_pbkey = NULL, *evp_pkey = NULL;
 
     // 1. generate rsa key
-    bne = BN_new();
-    ret = BN_set_word(bne, e);
+    bn = BN_new();
+    ret = BN_set_word(bn, RSA_F4);
     if (ret != 1)
     {
         goto free_all;
     }
 
-    r = RSA_new();
-    ret = RSA_generate_key_ex(r, bits, bne, NULL);
+    rsa = RSA_new();
+    ret = RSA_generate_key_ex(rsa, bits, bn, NULL);
     if (ret != 1)
     {
         goto free_all;
     }
 
     // 2. save public key
-    //bp_public = BIO_new_file("public.pem", "w+");
-    bp_public = BIO_new(BIO_s_mem());
-    ret = PEM_write_bio_RSAPublicKey(bp_public, r);
+    //bio_public_out = BIO_new_file("public.pem", "w+");
+    bio_public_out = BIO_new(BIO_s_mem());
+    ret = PEM_write_bio_RSAPublicKey(bio_public_out, rsa);
     if (ret != 1)
     {
         goto free_all;
     }
 
     // 3. save private key
-    //bp_private = BIO_new_file("private.pem", "w+");
-    bp_private = BIO_new(BIO_s_mem());
-    ret = PEM_write_bio_RSAPrivateKey(bp_private, r, NULL, NULL, 0, NULL, NULL);
+    //bio_private_out = BIO_new_file("private.pem", "w+");
+    bio_private_out = BIO_new(BIO_s_mem());
+    ret = PEM_write_bio_RSAPrivateKey(bio_private_out, rsa, NULL, NULL, 0, NULL, NULL);
 
     //4. Get the keys are PEM formatted strings
-    pri_len = BIO_pending(bp_private);
-    pub_len = BIO_pending(bp_public);
+    pri_len = BIO_pending(bio_private_out);
+    pub_len = BIO_pending(bio_public_out);
 
     pri_key = (char *)malloc(pri_len + 1);
     pub_key = (char *)malloc(pub_len + 1);
 
-    BIO_read(bp_private, pri_key, pri_len);
-    BIO_read(bp_public, pub_key, pub_len);
+    BIO_read(bio_private_out, pri_key, pri_len);
+    BIO_read(bio_public_out, pub_key, pub_len);
 
     pri_key[pri_len] = '\0';
     pub_key[pub_len] = '\0';
 
     printf("\n%s\n%s\n", pri_key, pub_key);
 
-    //verify if you are able to re-construct the keys
-    pbkeybio = BIO_new_mem_buf((void *)pub_key, pub_len);
-    if (pbkeybio == NULL)
+    //verify if you are able to re-construct public key
+    bio_public_in = BIO_new_mem_buf((void *)pub_key, pub_len);
+    if (bio_public_in == NULL)
     {
         return -1;
     }
-    evp_pbkey = PEM_read_bio_PUBKEY(pbkeybio, &evp_pbkey, NULL, NULL);
-    if (evp_pbkey == NULL)
-    {
-        char buffer[120];
-        ERR_error_string(ERR_get_error(), buffer);
-        printf("Error reading public key:%s\n", buffer);
-    }
-
-    evp_pbkey = EVP_PKEY_new();
-    EVP_PKEY_assign_RSA(evp_pbkey, pb_rsa);
-    pkeybio = BIO_new_mem_buf((void *)pri_key, pri_len);
-    if (pkeybio == NULL)
-    {
-        return -1;
-    }
-
-    pb_rsa = PEM_read_bio_RSAPublicKey(pbkeybio, &pb_rsa, NULL, NULL);
+    pb_rsa = PEM_read_bio_RSAPublicKey(bio_public_in, &pb_rsa, NULL, NULL);
     if (pb_rsa == NULL)
     {
         char buffer[120];
         ERR_error_string(ERR_get_error(), buffer);
         printf("Error reading public key:%s\n", buffer);
     }
+    evp_pbkey = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(evp_pbkey, pb_rsa);
 
-    BIO_free(pbkeybio);
-    BIO_free(pkeybio);
+    // verify if you are able to re-construct private key
+    bio_private_in = BIO_new_mem_buf((void *)pri_key, pri_len);
+    if (bio_private_in == NULL)
+    {
+        return -1;
+    }
+    p_rsa = PEM_read_bio_RSAPrivateKey(bio_private_in, &p_rsa, NULL, NULL);
+    if (p_rsa == NULL)
+    {
+        char buffer[120];
+        ERR_error_string(ERR_get_error(), buffer);
+        printf("Error reading private key:%s\n", buffer);
+    }
+    evp_pkey = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(evp_pkey, p_rsa);
 
 // 4. free
 free_all:
-
-    BIO_free_all(bp_public);
-    BIO_free_all(bp_private);
-    RSA_free(r);
-    BN_free(bne);
+    if (pri_key != NULL)
+    {
+        free(pri_key);
+    }
+    if (pub_key != NULL)
+    {
+        free(pub_key);
+    }
+    BIO_free_all(bio_public_in);
+    BIO_free_all(bio_private_in);
+    BIO_free_all(bio_public_out);
+    BIO_free_all(bio_private_out);
+    EVP_PKEY_free(evp_pkey);
+    EVP_PKEY_free(evp_pbkey);
+    RSA_free(rsa);
+    BN_free(bn);
 
     return (ret == 1);
+}
+
+int main(int argc, char *argv[])
+{
+    generate_rsa_keypair(2048);
+    return 0;
 }
