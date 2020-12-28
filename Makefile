@@ -4,7 +4,7 @@
 
 # if you are using VS Code intellisense, remember to add /usr/local/opt/openssl/include to your include path
 CC     = gcc
-CFLAGS = -Wall -std=gnu99 -lpthread -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib
+CFLAGS = -Wall -std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib
 LL     = -lssl -lcrypto
 EXE    = cryppo
 OBJ    = cryppo.o

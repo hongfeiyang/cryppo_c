@@ -3,119 +3,155 @@
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <openssl/aes.h>
+#include <openssl/evp.h>
+#include <openssl/ssl.h>
+#include <openssl/bio.h>
 
-bool generate_rsa_keypair(int bits)
+RSA *generate_keypair(int bits)
 {
-    size_t pri_len, pub_len;              // Length of private/public key
-    char *pri_key = NULL, *pub_key = NULL; // Private/Public key string in PEM
-
     int ret = 0;
-    RSA *rsa = NULL;
     BIGNUM *bn = NULL;
-    BIO *bio_public_out = NULL, *bio_private_out = NULL, *bio_public_in = NULL, *bio_private_in = NULL;
-    RSA *pb_rsa = NULL, *p_rsa = NULL;
-    EVP_PKEY *evp_pbkey = NULL, *evp_pkey = NULL;
+    RSA *rsa = NULL;
 
-    // 1. generate rsa key
     bn = BN_new();
     ret = BN_set_word(bn, RSA_F4);
     if (ret != 1)
     {
-        goto free_all;
+        goto err;
     }
 
     rsa = RSA_new();
     ret = RSA_generate_key_ex(rsa, bits, bn, NULL);
     if (ret != 1)
     {
-        goto free_all;
+        goto err;
     }
-
-    // 2. save public key
-    //bio_public_out = BIO_new_file("public.pem", "w+");
-    bio_public_out = BIO_new(BIO_s_mem());
-    ret = PEM_write_bio_RSAPublicKey(bio_public_out, rsa);
-    if (ret != 1)
-    {
-        goto free_all;
-    }
-
-    // 3. save private key
-    //bio_private_out = BIO_new_file("private.pem", "w+");
-    bio_private_out = BIO_new(BIO_s_mem());
-    ret = PEM_write_bio_RSAPrivateKey(bio_private_out, rsa, NULL, NULL, 0, NULL, NULL);
-
-    //4. Get the keys are PEM formatted strings
-    pri_len = BIO_pending(bio_private_out);
-    pub_len = BIO_pending(bio_public_out);
-
-    pri_key = (char *)malloc(pri_len + 1);
-    pub_key = (char *)malloc(pub_len + 1);
-
-    BIO_read(bio_private_out, pri_key, pri_len);
-    BIO_read(bio_public_out, pub_key, pub_len);
-
-    pri_key[pri_len] = '\0';
-    pub_key[pub_len] = '\0';
-
-    printf("\n%s\n%s\n", pri_key, pub_key);
-
-    //verify if you are able to re-construct public key
-    bio_public_in = BIO_new_mem_buf((void *)pub_key, pub_len);
-    if (bio_public_in == NULL)
-    {
-        return -1;
-    }
-    pb_rsa = PEM_read_bio_RSAPublicKey(bio_public_in, &pb_rsa, NULL, NULL);
-    if (pb_rsa == NULL)
-    {
-        char buffer[120];
-        ERR_error_string(ERR_get_error(), buffer);
-        printf("Error reading public key:%s\n", buffer);
-    }
-    evp_pbkey = EVP_PKEY_new();
-    EVP_PKEY_assign_RSA(evp_pbkey, pb_rsa);
-
-    // verify if you are able to re-construct private key
-    bio_private_in = BIO_new_mem_buf((void *)pri_key, pri_len);
-    if (bio_private_in == NULL)
-    {
-        return -1;
-    }
-    p_rsa = PEM_read_bio_RSAPrivateKey(bio_private_in, &p_rsa, NULL, NULL);
-    if (p_rsa == NULL)
-    {
-        char buffer[120];
-        ERR_error_string(ERR_get_error(), buffer);
-        printf("Error reading private key:%s\n", buffer);
-    }
-    evp_pkey = EVP_PKEY_new();
-    EVP_PKEY_assign_RSA(evp_pkey, p_rsa);
-
-// 4. free
-free_all:
-    if (pri_key != NULL)
-    {
-        free(pri_key);
-    }
-    if (pub_key != NULL)
-    {
-        free(pub_key);
-    }
-    BIO_free_all(bio_public_in);
-    BIO_free_all(bio_private_in);
-    BIO_free_all(bio_public_out);
-    BIO_free_all(bio_private_out);
-    EVP_PKEY_free(evp_pkey);
-    EVP_PKEY_free(evp_pbkey);
-    RSA_free(rsa);
     BN_free(bn);
+    return rsa;
 
-    return (ret == 1);
+err:
+    BN_free(bn);
+    RSA_free(rsa);
+    return NULL;
 }
 
+static char *bio_to_string(BIO *bio)
+{
+    int len = BIO_pending(bio);
+    char *pem = malloc(len + 1);
+    if (BIO_read(bio, pem, len) != len)
+    {
+        free(pem);
+        return NULL;
+    }
+    pem[len] = '\0';
+    return pem;
+}
+
+char *get_public_key_pem(RSA *rsa)
+{
+
+    BIO *bio = NULL;
+    bio = BIO_new(BIO_s_mem());
+    if (PEM_write_bio_RSAPublicKey(bio, rsa) != 1)
+    {
+        goto err;
+    }
+    char *pem = bio_to_string(bio);
+    if (pem == NULL)
+    {
+        goto err;
+    }
+    BIO_free_all(bio);
+    return pem;
+err:
+    BIO_free_all(bio);
+    return NULL;
+}
+
+char *get_private_key_pem(RSA *rsa)
+{
+
+    BIO *bio = NULL;
+    bio = BIO_new(BIO_s_mem());
+    if (PEM_write_bio_RSAPrivateKey(bio, rsa, NULL, NULL, 0, NULL, NULL) != 1)
+    {
+        goto err;
+    }
+    char *pem = bio_to_string(bio);
+    if (pem == NULL)
+    {
+        goto err;
+    }
+    BIO_free_all(bio);
+    return pem;
+err:
+    BIO_free_all(bio);
+    return NULL;
+}
+
+// pem must be null byte terminated
+RSA *load_rsa_private_key_from_pem(char *pem)
+{
+    BIO *bio = NULL;
+    RSA *rsa = NULL;
+
+    bio = BIO_new_mem_buf((void *)pem, -1);
+    if (bio == NULL)
+    {
+        return NULL;
+    }
+    rsa = PEM_read_bio_RSAPrivateKey(bio, &rsa, NULL, NULL);
+    if (rsa == NULL)
+    {
+        char buffer[120];
+        ERR_error_string(ERR_get_error(), buffer);
+        printf("Error reading key:%s\n", buffer);
+    }
+    BIO_free_all(bio);
+    return rsa;
+}
+
+// pem must be null byte terminated
+RSA *load_rsa_public_key_from_pem(char *pem)
+{
+    BIO *bio = NULL;
+    RSA *rsa = NULL;
+
+    bio = BIO_new_mem_buf((void *)pem, -1);
+    if (bio == NULL)
+    {
+        return NULL;
+    }
+    rsa = PEM_read_bio_RSAPublicKey(bio, &rsa, NULL, NULL);
+    if (rsa == NULL)
+    {
+        char buffer[120];
+        ERR_error_string(ERR_get_error(), buffer);
+        printf("Error reading key:%s\n", buffer);
+    }
+    BIO_free_all(bio);
+    return rsa;
+}
+
+// https://gist.github.com/irbull/08339ddcd5686f509e9826964b17bb59
 int main(int argc, char *argv[])
 {
-    generate_rsa_keypair(2048);
+    RSA *rsa = generate_keypair(2048);
+    char *public_key = get_public_key_pem(rsa);
+    char *private_key = get_private_key_pem(rsa);
+    RSA *p_rsa = load_rsa_private_key_from_pem(private_key);
+    RSA *pb_rsa = load_rsa_public_key_from_pem(public_key);
+    printf("%s\n", public_key);
+    printf("%s\n", private_key);
+    printf("%d\n", p_rsa != NULL);
+    printf("%d\n", pb_rsa != NULL);
+
+    RSA_free(rsa);
+    RSA_free(p_rsa);
+    RSA_free(pb_rsa);
+    free(public_key);
+    free(private_key);
     return 0;
 }
