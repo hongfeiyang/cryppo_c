@@ -1,31 +1,104 @@
 #include "rsa.h"
 
-RSA *generate_rsa_keypair(int bits)
+int RSA_generate_keypair(EVP_PKEY **skey, EVP_PKEY **vkey)
 {
-    int ret = 0;
+    int result = -1;
+
+    if (!skey || !vkey)
+        return -1;
+
+    if (*skey != NULL)
+    {
+        EVP_PKEY_free(*skey);
+        *skey = NULL;
+    }
+
+    if (*vkey != NULL)
+    {
+        EVP_PKEY_free(*vkey);
+        *vkey = NULL;
+    }
+
     BIGNUM *bn = NULL;
     RSA *rsa = NULL;
 
-    bn = BN_new();
-    ret = BN_set_word(bn, RSA_F4);
-    if (ret != 1)
+    do
     {
-        goto err;
+        *skey = EVP_PKEY_new();
+        assert(*skey != NULL);
+        if (*skey == NULL)
+        {
+            printf("EVP_PKEY_new failed (1), error 0x%lx\n", ERR_get_error());
+            break; /* failed */
+        }
+
+        *vkey = EVP_PKEY_new();
+        assert(*vkey != NULL);
+        if (*vkey == NULL)
+        {
+            printf("EVP_PKEY_new failed (2), error 0x%lx\n", ERR_get_error());
+            break; /* failed */
+        }
+
+        bn = BN_new();
+        int rc = BN_set_word(bn, RSA_F4);
+        if (rc != 1)
+        {
+            printf("BN_set_word failed, error 0x%lx\n", ERR_get_error());
+            break; /* failed */
+        }
+
+        rsa = RSA_new();
+        rc = RSA_generate_key_ex(rsa, 2048, bn, NULL);
+        if (rc != 1)
+        {
+            printf("RSA_generate_key_ex failed, error 0x%lx\n", ERR_get_error());
+            break; /* failed */
+        }
+        
+        assert(rsa != NULL);
+        if (rsa == NULL)
+        {
+            printf("RSA_generate_key failed, error 0x%lx\n", ERR_get_error());
+            break; /* failed */
+        }
+
+        /* Set signing key */
+        rc = EVP_PKEY_assign_RSA(*skey, RSAPrivateKey_dup(rsa));
+        assert(rc == 1);
+        if (rc != 1)
+        {
+            printf("EVP_PKEY_assign_RSA (1) failed, error 0x%lx\n", ERR_get_error());
+            break; /* failed */
+        }
+
+        /* Sanity check. Verify private exponent is present */
+        /* assert(EVP_PKEY_get0_RSA(*skey)->d != NULL); */
+
+        /* Set verifier key */
+        rc = EVP_PKEY_assign_RSA(*vkey, RSAPublicKey_dup(rsa));
+        assert(rc == 1);
+        if (rc != 1)
+        {
+            printf("EVP_PKEY_assign_RSA (2) failed, error 0x%lx\n", ERR_get_error());
+            break; /* failed */
+        }
+
+        /* Sanity check. Verify private exponent is missing */
+        /* assert(EVP_PKEY_get0_RSA(*vkey)->d == NULL); */
+
+        result = 0;
+
+    } while (0);
+
+    if (rsa)
+    {
+        BN_free(bn);
+        RSA_free(rsa);
+        rsa = NULL;
     }
 
-    rsa = RSA_new();
-    ret = RSA_generate_key_ex(rsa, bits, bn, NULL);
-    if (ret != 1)
-    {
-        goto err;
-    }
-    BN_free(bn);
-    return rsa;
-
-err:
-    BN_free(bn);
-    RSA_free(rsa);
-    return NULL;
+    return !!result;
 }
 
 static char *bio_to_string(BIO *bio)
@@ -126,7 +199,8 @@ RSA *load_rsa_public_key_from_pem(char *pem)
     BIO_free_all(bio);
     return rsa;
 }
-int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pkey)
+
+int RSA_Sign(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pkey)
 {
     /* Returned to caller */
     int result = -1;
@@ -156,7 +230,7 @@ int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pk
         }
 
         int rc = EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestInit_ex failed, error 0x%lx\n", ERR_get_error());
@@ -164,7 +238,7 @@ int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pk
         }
 
         rc = EVP_DigestSignInit(ctx, NULL, EVP_sha256(), NULL, pkey);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestSignInit failed, error 0x%lx\n", ERR_get_error());
@@ -172,7 +246,7 @@ int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pk
         }
 
         rc = EVP_DigestSignUpdate(ctx, msg, mlen);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestSignUpdate failed, error 0x%lx\n", ERR_get_error());
@@ -181,7 +255,7 @@ int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pk
 
         size_t req = 0;
         rc = EVP_DigestSignFinal(ctx, NULL, &req);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestSignFinal failed (1), error 0x%lx\n", ERR_get_error());
@@ -205,7 +279,7 @@ int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pk
 
         *slen = req;
         rc = EVP_DigestSignFinal(ctx, *sig, slen);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestSignFinal failed (3), return code %d, error 0x%lx\n", rc, ERR_get_error());
@@ -232,7 +306,7 @@ int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pk
     return !!result;
 }
 
-int verify_it(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PKEY *pkey)
+int RSA_Verify(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PKEY *pkey)
 {
     /* Returned to caller */
     int result = -1;
@@ -256,7 +330,7 @@ int verify_it(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PK
         }
 
         int rc = EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestInit_ex failed, error 0x%lx\n", ERR_get_error());
@@ -264,7 +338,7 @@ int verify_it(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PK
         }
 
         rc = EVP_DigestVerifyInit(ctx, NULL, EVP_sha256(), NULL, pkey);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestVerifyInit failed, error 0x%lx\n", ERR_get_error());
@@ -272,7 +346,7 @@ int verify_it(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PK
         }
 
         rc = EVP_DigestVerifyUpdate(ctx, msg, mlen);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestVerifyUpdate failed, error 0x%lx\n", ERR_get_error());
@@ -283,7 +357,7 @@ int verify_it(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PK
         ERR_clear_error();
 
         rc = EVP_DigestVerifyFinal(ctx, sig, slen);
-        assert(rc == 1);
+
         if (rc != 1)
         {
             printf("EVP_DigestVerifyFinal failed, error 0x%lx\n", ERR_get_error());
@@ -301,4 +375,18 @@ int verify_it(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PK
     }
 
     return !!result;
+}
+
+void RSA_Sig_print(const char *label, const byte *buff, size_t len)
+{
+    if (!buff || !len)
+        return;
+
+    if (label)
+        printf("%s: ", label);
+
+    for (size_t i = 0; i < len; ++i)
+        printf("%02X", buff[i]);
+
+    printf("\n");
 }

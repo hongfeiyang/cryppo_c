@@ -9,8 +9,11 @@
 
 typedef unsigned char byte;
 
-RSA *generate_rsa_keypair(int bits);
+int RSA_generate_keypair(EVP_PKEY **skey, EVP_PKEY **vkey);
 char *get_public_key_pem(RSA *rsa);
 char *get_private_key_pem(RSA *rsa);
 RSA *load_rsa_private_key_from_pem(char *pem);
 RSA *load_rsa_public_key_from_pem(char *pem);
+int RSA_Verify(const byte *msg, size_t mlen, const byte *sig, size_t slen, EVP_PKEY *pkey);
+int RSA_Sign(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pkey);
+void RSA_Sig_print(const char* label, const byte* buff, size_t len);
