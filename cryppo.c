@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
 
     RSA_Sign(msg, sizeof(msg), &sig, &slen, skey);
     RSA_Sig_print("Signature", sig, slen);
-    sig[0] = (byte)1;
+    sig[0] ^= sig[0];
     rc = RSA_Verify(msg, sizeof(msg), sig, slen, vkey);
     if (rc == 0)
     {

@@ -6,8 +6,7 @@
 #include <openssl/evp.h>
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
-
-typedef unsigned char byte;
+#include "types.h"
 
 int RSA_generate_keypair(EVP_PKEY **skey, EVP_PKEY **vkey);
 char *get_public_key_pem(RSA *rsa);

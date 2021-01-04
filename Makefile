@@ -7,7 +7,7 @@ CC     = gcc
 CFLAGS = -Wall -Wextra -std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib
 LL     = -lssl -lcrypto
 EXE    = cryppo
-OBJ    = cryppo.o rsa.o
+OBJ    = cryppo.o rsa.o aes.o
 
 all: $(EXE)
 
@@ -17,6 +17,8 @@ $(EXE): $(OBJ)
 cryppo.o: cryppo.c rsa.c
 
 rsa.o: rsa.c
+
+aes.o: aes.c
 
 # Run leaks detecting tool, provided by XCode
 # If you are get 'could not load inserted library' error, run:
