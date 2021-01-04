@@ -11,7 +11,7 @@ int gcm_encrypt(byte *plaintext, int plaintext_len,
 
     int len;
 
-    int ciphertext_len;
+    int ciphertext_len = 0;
 
     do
     {
@@ -101,7 +101,7 @@ int gcm_decrypt(byte *ciphertext, int ciphertext_len,
     EVP_CIPHER_CTX *ctx;
     int len;
     int plaintext_len;
-    int ret;
+    int ret = 0;
 
     do
     {
@@ -162,9 +162,9 @@ int gcm_decrypt(byte *ciphertext, int ciphertext_len,
         }
 
         /*
-     * Finalise the decryption. A positive return value indicates success,
-     * anything else is a failure - the plaintext is not trustworthy.
-     */
+         * Finalise the decryption. A positive return value indicates success,
+         * anything else is a failure - the plaintext is not trustworthy.
+         */
         ret = EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
     } while (0);
 

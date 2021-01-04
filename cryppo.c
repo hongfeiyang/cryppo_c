@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <openssl/rsa.h>
 #include <openssl/evp.h>
-#include "rsa.h"
 #include <string.h>
+#include "rsa.h"
+#include "aes.h"
 
 // https://gist.github.com/irbull/08339ddcd5686f509e9826964b17bb59
 int main(int argc, char *argv[])
